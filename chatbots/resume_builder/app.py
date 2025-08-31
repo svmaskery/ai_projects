@@ -1,119 +1,90 @@
 import streamlit as st
+import os
+import io
 from dotenv import load_dotenv
 from core.model import ResumeModel, JobDescriptionModel
-from core.processing import load_pdf_content, parse_document, generate_feedback
+from core.processing import generate_feedback, parse_document_with_rag, parse_text_with_llm, answer_query_with_rag
 from core.prompts import RESUME_PARSER_PROMPT, JD_PARSER_PROMPT
+from core.rag_pipeline import load_and_chunk_document_with_metadata
 
-# # Load environment variables
-# load_dotenv()
 
-st.set_page_config(page_title="AI-Powered Resume Builder", layout="wide")
+st.set_page_config(page_title="AI-Powered Resume Analyzer", layout="wide")
 
-# Initialize state variables
 if "messages" not in st.session_state:
     st.session_state.messages = []
 if "feedback" not in st.session_state:
     st.session_state.feedback = None
+if "parsed_resume_chunks" not in st.session_state:
+    st.session_state.parsed_resume_chunks = None
+if "headers" not in st.session_state:
+    st.session_state.headers = []
+if "error_message" not in st.session_state:
+    st.session_state.error_message = ""
 
-st.title("👨‍💼 AI-Powered Resume Builder & Coach")
+st.title("👨‍💼 AI-Powered Resume Analyzer & Coach")
 st.markdown("Upload your resume and a job description to get personalized, actionable feedback and content to improve your resume.")
 
-# User inputs in a single form
 with st.form("input_form"):
     st.subheader("Your Inputs")
     uploaded_resume = st.file_uploader("Upload your Resume (PDF only)", type=["pdf"])
     jd_text = st.text_area("Paste the Job Description Text", height=300)
     submitted = st.form_submit_button("Analyze Resume", type="primary")
 
-# Main processing logic is now a simple, linear block
+if st.session_state.error_message:
+    st.error(st.session_state.error_message)
+    st.stop()
+
 if submitted:
-    # Clear previous messages and feedback
     st.session_state.messages = []
     st.session_state.feedback = None
+    st.session_state.parsed_resume_chunks = None
+    st.session_state.headers = []
+    st.session_state.jd_text = jd_text
 
     if not uploaded_resume or not jd_text:
-        st.session_state.messages.append({"role": "assistant", "content": "❌ Please upload a resume and paste a job description to analyze."})
+        st.session_state.messages.append({"role": "assistant", "content": "Please upload a resume and paste a job description to analyze."})
     else:
+        resume_file_obj = io.BytesIO(uploaded_resume.getbuffer())
         with st.spinner("Analyzing your resume..."):
-            # Step 1: Load resume content from PDF
-            st.session_state.messages.append({"role": "assistant", "content": "✅ Resume file uploaded successfully."})
-            resume_text = load_pdf_content(uploaded_resume)
-
-            # print("--------------------------")
-            # print("Resume Text: ", resume_text)
-            # print("--------------------------")
             
-            if not resume_text:
-                st.session_state.messages.append({"role": "assistant", "content": "❌ Failed to read the PDF. Please ensure it is a valid PDF file."})
+            # Chunk the resume and store the chunks and headers in session state
+            st.session_state.messages.append({"role": "assistant", "content": "Parsing resume contents..."})
+            chunks, headers = load_and_chunk_document_with_metadata(resume_file_obj)
+            if not chunks:
+                st.session_state.error_message = "Failed to load your resume. Please check the logs."
                 st.stop()
+            st.session_state.parsed_resume_chunks = chunks
+            st.session_state.headers = headers
             
-            # Step 2: Parse Resume Data
-            st.session_state.messages.append({"role": "assistant", "content": "🔍 Parsing resume content..."})
-            resume_data = parse_document(resume_text, ResumeModel, RESUME_PARSER_PROMPT)
-
-            # print("--------------------------")
-            # print("Resume Data: ", resume_data)
-            # print("--------------------------")
-            if resume_data:
-                with st.expander("Show Parsed Resume Data"):
-                    st.json(resume_data.dict())
-            else:
-                st.session_state.messages.append({"role": "assistant", "content": "❌ Failed to parse your resume..."})
-                st.stop()
-
+            # Parse resume data from chunks
+            resume_data = parse_document_with_rag(chunks, headers, ResumeModel, RESUME_PARSER_PROMPT)
             if not resume_data:
-                st.session_state.messages.append({"role": "assistant", "content": "❌ Failed to parse your resume. The content may be too complex for the model."})
+                st.session_state.error_message = "Failed to parse your resume. Please check the logs."
                 st.stop()
             
-            st.session_state.messages.append({"role": "assistant", "content": "✅ Resume parsed successfully."})
-
-            # Step 3: Parse Job Description Data
-            st.session_state.messages.append({"role": "assistant", "content": "🔍 Parsing job description..."})
-            jd_data = parse_document(jd_text, JobDescriptionModel, JD_PARSER_PROMPT)
-
-            # print("--------------------------")
-            # print("JD Data: ", jd_data)
-            # print("--------------------------")
-            if jd_data:
-                with st.expander("Show Parsed Job Description Data"):
-                    st.json(jd_data.dict())
-            else:
-                st.session_state.messages.append({"role": "assistant", "content": "❌ Failed to parse the job description..."})
-                st.stop()
-
+            # Parse Job Description Data
+            st.session_state.messages.append({"role": "assistant", "content": "Parsing job description..."})
+            jd_data = parse_text_with_llm(jd_text, JobDescriptionModel, JD_PARSER_PROMPT)
             if not jd_data:
-                st.session_state.messages.append({"role": "assistant", "content": "❌ Failed to parse the job description. Please check the format."})
+                st.session_state.error_message = "Failed to parse the job description. Please check the logs."
                 st.stop()
             
-            st.session_state.messages.append({"role": "assistant", "content": "✅ Job description parsed successfully."})
-
-            # Step 4: Generate Feedback
-            st.session_state.messages.append({"role": "assistant", "content": "✨ Generating personalized feedback..."})
+            # Generate Feedback
+            st.session_state.messages.append({"role": "assistant", "content": "Generating personalized feedback..."})
             feedback = generate_feedback(resume_data.dict(), jd_text)
-
-            # print("--------------------------")
-            # print("Feedback: ", feedback)
-            # print("--------------------------")
-            if feedback:
-                with st.expander("Show Final Feedback Data (Pydantic Model)"):
-                    st.json(feedback.dict())
-            else:
-                st.session_state.messages.append({"role": "assistant", "content": "❌ Failed to generate feedback..."})
-                st.stop()
-
             if not feedback:
-                st.session_state.messages.append({"role": "assistant", "content": "❌ Failed to generate feedback. Please try again later."})
+                st.session_state.error_message = "Failed to generate feedback. Please check the logs."
                 st.stop()
             
-            st.session_state.messages.append({"role": "assistant", "content": "🎉 Analysis complete! Here is your personalized feedback."})
+            st.session_state.messages.append({"role": "assistant", "content": "Analysis complete! Here is your personalized feedback."})
             st.session_state.feedback = feedback
 
-# Display chat history in order of execution
+
+# Display existing messages and feedback
 for message in st.session_state.messages:
     with st.chat_message(message["role"]):
         st.markdown(message["content"])
 
-# Display structured feedback if available
 if st.session_state.feedback:
     st.subheader("Analysis & Suggestions")
     feedback = st.session_state.feedback
@@ -138,3 +109,23 @@ if st.session_state.feedback:
             st.text_area("Rewritten:", value=rewrite.rewritten, height=50)
             st.caption(f"Reasoning: {rewrite.reasoning}")
             st.markdown("---")
+
+    st.markdown("---")
+    st.subheader("Interactive Resume Assistant")
+    st.markdown("Ask me questions about the resume content.")
+
+    if prompt := st.chat_input("Ask a question about the resume..."):
+        # Display user message in chat message container
+        st.session_state.messages.append({"role": "user", "content": prompt})
+        with st.chat_message("user"):
+            st.markdown(prompt)
+
+        # Display assistant response in chat message container
+        with st.chat_message("assistant"):
+            with st.spinner("Thinking..."):
+                response = answer_query_with_rag(prompt, st.session_state.parsed_resume_chunks, 
+                                                 st.session_state.headers, st.session_state.jd_text)
+                st.markdown(response.content)
+        
+        # Add assistant response to chat history
+        st.session_state.messages.append({"role": "assistant", "content": response})
