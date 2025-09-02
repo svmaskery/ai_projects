@@ -91,6 +91,7 @@ Question: {question}
 Answer:
 """
 
+# Prompt to rewrite resume according to JD
 FULL_RESUME_REWRITE_PROMPT = """
 You are a professional resume writer and career coach. Your task is to rewrite an entire resume to be perfectly tailored for a specific job description.
 
