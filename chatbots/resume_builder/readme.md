@@ -12,6 +12,7 @@ The AI-Powered Resume Builder & Coach is an intelligent application designed to 
 
 ## Demo
 <video controls src="media/recording.mov" title="Running Example"></video>
+Watch the demo [video](media/recording.mov)
 
 ## Evolution of the Application
 
