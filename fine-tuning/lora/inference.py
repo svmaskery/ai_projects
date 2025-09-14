@@ -3,8 +3,10 @@ from peft import PeftModel
 import torch
 from trl import setup_chat_format
 
+# Initialize models
 base_model = 'HuggingFaceTB/SmolLM2-135M-instruct'
 new_model = './lora-sft-1/checkpoint-1500/'
+
 # Reload tokenizer and model
 tokenizer = AutoTokenizer.from_pretrained(base_model)
 
@@ -32,7 +34,6 @@ pipe = pipeline(
     "text-generation",
     model=model,
     tokenizer=tokenizer,
-    # torch_dtype=torch.float16,
     device_map="auto",
 )
 
