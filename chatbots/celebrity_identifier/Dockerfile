@@ -1,14 +1,14 @@
-## Parent image
+# Python image
 FROM python:3.10-slim
 
-## Essential environment variables
+# Helpful environment variables
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1
 
-## Work directory inside the docker container
+# Work directory inside the docker container
 WORKDIR /app
 
-## Installing system dependencies (including OpenCV requirements)
+# Installing system dependencies 
 RUN apt-get update && apt-get install -y \
     build-essential \
     curl \
@@ -19,14 +19,14 @@ RUN apt-get update && apt-get install -y \
     libxrender-dev \
     && rm -rf /var/lib/apt/lists/*
 
-## Copying all contents from local to /app in container
+# Copying all contents from local to container
 COPY . .
 
-## Run setup.py (for editable install if using setup.py)
+# Run setup.py
 RUN pip install --no-cache-dir -e .
 
-## Expose Flask port
+# Expose Flask port
 EXPOSE 8000
 
-## Run the app (ensure this is the correct file with app.run)
+# Run the app
 CMD ["python", "app.py"]
